@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for Hardback",
+  "windows": ["main", "menulet"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "dialog:default",
+    "opener:default",
+    "autostart:default"
+  ]
+}
+

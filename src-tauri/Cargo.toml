@@ -1,0 +1,49 @@
+[package]
+name = "hardback"
+version = "0.1.0"
+description = "High-speed verified media offload engine in Rust"
+authors = ["Hardback"]
+edition = "2021"
+
+[lib]
+name = "hardback_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+xxhash-rust = { version = "0.8", features = ["xxh64", "xxh3"] }
+sysinfo = "0.33"
+walkdir = "2.5"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+bytes = "1.9"
+libc = "0.2"
+md-5 = "0.11.0"
+sha2 = "0.11.1"
+tauri-plugin-autostart = "2"
+
+[profile.dev]
+opt-level = 3
+codegen-units = 1
+incremental = false
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+
+

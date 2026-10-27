@@ -1,0 +1,41 @@
+<svg viewBox="0 0 1024 1024" width="1024" height="1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="p3-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#21201D"/>
+      <stop offset="100%" stop-color="#141311"/>
+    </linearGradient>
+    <linearGradient id="p3-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F59E0B" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#D97706" stop-opacity="0.1"/>
+    </linearGradient>
+    <linearGradient id="p3-front-ssd" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#323235"/>
+      <stop offset="100%" stop-color="#1C1C1E"/>
+    </linearGradient>
+    <linearGradient id="p3-check-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+    <filter id="p3-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="-10" dy="16" stdDeviation="18" flood-color="#000000" flood-opacity="0.7"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Background Canvas -->
+  <rect width="1024" height="1024" rx="230" fill="url(#p3-bg)"/>
+  <rect x="16" y="16" width="992" height="992" rx="214" fill="none" stroke="url(#p3-rim)" stroke-width="4"/>
+
+  <!-- Back SSD (Destination) -->
+  <rect x="290" y="220" width="530" height="420" rx="70" fill="#242426" stroke="#3A3A3D" stroke-width="8"/>
+  <circle cx="760" cy="280" r="14" fill="#3B82F6"/>
+
+  <!-- Front SSD (Source) -->
+  <rect x="200" y="380" width="530" height="420" rx="70" fill="url(#p3-front-ssd)" stroke="#454549" stroke-width="8" filter="url(#p3-shadow)"/>
+
+  <!-- Intersecting Speed Vector & Checkmark -->
+  <g transform="translate(360, 470)">
+    <!-- Fast Transfer Arrows forming check -->
+    <path d="M60 140 L130 210 L280 60" fill="none" stroke="url(#p3-check-grad)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M140 10 L230 10 M200 40 L250 40 M170 70 L210 70" stroke="#F59E0B" stroke-width="10" stroke-linecap="round" opacity="0.6"/>
+  </g>
+</svg>

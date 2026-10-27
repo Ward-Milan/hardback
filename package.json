@@ -1,0 +1,32 @@
+{
+  "name": "hardback",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Professional high-speed verified media ingest & backup application",
+  "type": "module",
+  "scripts": {
+    "dev": "lsof -ti:1420 | xargs kill -9 2>/dev/null || true; PATH=\"$HOME/.local/node/bin:$HOME/.cargo/bin:$PATH\" vite",
+    "build": "PATH=\"$HOME/.local/node/bin:$HOME/.cargo/bin:$PATH\" tsc && PATH=\"$HOME/.local/node/bin:$HOME/.cargo/bin:$PATH\" vite build",
+    "preview": "PATH=\"$HOME/.local/node/bin:$HOME/.cargo/bin:$PATH\" vite preview",
+    "tauri": "env -u ELECTRON_RUN_AS_NODE PATH=\"$HOME/.local/node/bin:$HOME/.cargo/bin:$PATH\" \"$HOME/.local/node/bin/node\" ./node_modules/@tauri-apps/cli/tauri.js"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.2.0",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-opener": "^2.2.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
+  }
+}

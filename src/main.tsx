@@ -41,7 +41,7 @@ if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
           smartCascading: true,
           fastInlineVerifyOnly: false,
           turboIo: true,
-          ignoreJunkFiles: true,
+          ignoreJunkFiles: false,
           ignoreCameraProxies: false,
           writeReportsOnDisk: false,
           sortByMediaType: false,

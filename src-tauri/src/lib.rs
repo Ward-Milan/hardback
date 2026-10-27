@@ -166,63 +166,84 @@ async fn cancel_transfer(
     manager: State<'_, Arc<EngineManager>>,
     job_id: String,
 ) -> Result<Vec<TransferJobState>, String> {
-    let was_completed = {
-        let jobs = manager.jobs.lock().unwrap();
-        jobs.get(&job_id)
-            .map(|j| j.status == "completed")
-            .unwrap_or(false)
+    let (is_running, was_completed) = {
+        let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
+        match jobs.get(&job_id) {
+            Some(j) => (
+                j.status == "copying" || j.status == "verifying" || j.status == "scanning",
+                j.status == "completed",
+            ),
+            None => (false, false),
+        }
     };
 
     // Safety guard: never delete destination files or history if the job was already completed!
     if was_completed {
         {
-            let mut jobs = manager.jobs.lock().unwrap();
+            let mut jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
             jobs.remove(&job_id);
         }
         {
-            let mut cps = manager.checkpoints.lock().unwrap();
+            let mut cps = manager.checkpoints.lock().unwrap_or_else(|p| p.into_inner());
             cps.remove(&job_id);
         }
         manager.persist_to_disk();
         crate::engine::refresh_tray_status(&app, &manager);
         let _ = app.emit("transfer-cancelled", &job_id);
-        let jobs = manager.jobs.lock().unwrap();
+        let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
         let mut list: Vec<TransferJobState> = jobs.values().cloned().collect();
         list.sort_by(|a, b| b.started_at.cmp(&a.started_at));
         return Ok(list);
     }
 
+    // Set cancellation flag with SeqCst ordering for immediate cross-thread visibility
     {
-        let flags = manager.control_flags.lock().unwrap();
+        let flags = manager.control_flags.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(flag) = flags.get(&job_id) {
-            flag.store(CTRL_CANCELLED, Ordering::Relaxed);
+            flag.store(CTRL_CANCELLED, Ordering::SeqCst);
         }
     }
 
-    let maybe_cp = {
-        let mut cps = manager.checkpoints.lock().unwrap();
-        cps.remove(&job_id).map(|arc_cp| arc_cp.lock().unwrap().clone())
-    };
+    if is_running {
+        // Pipeline is actively running: let run_ingest_pipeline stop workers gracefully
+        // and perform the safe purge itself, avoiding concurrent file access.
+        {
+            let mut jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(j) = jobs.get_mut(&job_id) {
+                j.status = "cancelled".to_string();
+                j.phase_label = "Annulation en cours…".to_string();
+                j.speed_bps = 0.0;
+                j.eta_seconds = None;
+            }
+        }
+        manager.persist_to_disk();
+        let _ = app.emit("transfer-cancelled", &job_id);
+    } else {
+        // Job was paused or queued: no active pipeline running, so purge directly
+        let maybe_cp = {
+            let mut cps = manager.checkpoints.lock().unwrap_or_else(|p| p.into_inner());
+            cps.remove(&job_id).map(|arc_cp| arc_cp.lock().unwrap_or_else(|p| p.into_inner()).clone())
+        };
 
-    {
-        let mut jobs = manager.jobs.lock().unwrap();
-        jobs.remove(&job_id);
+        {
+            let mut jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
+            jobs.remove(&job_id);
+        }
+
+        manager.persist_to_disk();
+        delete_history_entry(&job_id);
+
+        if let Some(cp_snapshot) = maybe_cp {
+            tauri::async_runtime::spawn_blocking(move || {
+                purge_cancelled_job(&cp_snapshot);
+            });
+        }
+
+        crate::engine::refresh_tray_status(&app, &manager);
+        let _ = app.emit("transfer-cancelled", &job_id);
     }
 
-    manager.persist_to_disk();
-    delete_history_entry(&job_id);
-
-    if let Some(cp_snapshot) = maybe_cp {
-        tauri::async_runtime::spawn_blocking(move || {
-            std::thread::sleep(std::time::Duration::from_millis(120));
-            purge_cancelled_job(&cp_snapshot);
-        });
-    }
-
-    crate::engine::refresh_tray_status(&app, &manager);
-    let _ = app.emit("transfer-cancelled", &job_id);
-
-    let jobs = manager.jobs.lock().unwrap();
+    let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
     let mut list: Vec<TransferJobState> = jobs.values().cloned().collect();
     list.sort_by(|a, b| b.started_at.cmp(&a.started_at));
     Ok(list)

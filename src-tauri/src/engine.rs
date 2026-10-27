@@ -1025,6 +1025,45 @@ pub fn start_ingest_job(
         }
     }
 
+    // Anti-Crash & Collision Prevention:
+    // If a job targeting this destination is already active or paused, handle it safely
+    {
+        let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
+        for existing in jobs.values() {
+            if existing_job_id.as_deref() == Some(&existing.id) {
+                continue;
+            }
+
+            let has_collision = resolved_destinations.iter().any(|new_dest| {
+                existing.destination_paths.iter().any(|d| {
+                    let d_path = PathBuf::from(d);
+                    d_path == *new_dest || new_dest.starts_with(&d_path) || d_path.starts_with(new_dest)
+                })
+            });
+
+            if has_collision {
+                if existing.status == "copying" || existing.status == "verifying" || existing.status == "scanning" {
+                    return Err(format!(
+                        "Un transfert vers cette destination est déjà en cours d'exécution ('{}'). Veuillez attendre sa fin ou le mettre en pause.",
+                        existing.source_name
+                    ));
+                }
+                if existing.status == "paused" {
+                    if existing.source_paths == source_paths {
+                        let resume_id = existing.id.clone();
+                        drop(jobs);
+                        return resume_existing_job(app, manager, &resume_id);
+                    } else {
+                        return Err(format!(
+                            "Un transfert vers cette destination est actuellement en pause ('{}'). Reprenez-le ou annulez-le avant de démarrer un nouveau transfert au même endroit.",
+                            existing.source_name
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     let job_id = existing_job_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let started_at_utc = Utc::now();
 
@@ -2169,15 +2208,14 @@ async fn run_ingest_pipeline(
     }
 
     if ctrl_state == CTRL_CANCELLED {
-        cleanup_part_files(&resolved_destinations);
-        let cp_snapshot = checkpoint.lock().unwrap().clone();
+        let cp_snapshot = checkpoint.lock().unwrap_or_else(|p| p.into_inner()).clone();
         purge_cancelled_job(&cp_snapshot);
         {
-            let mut jobs = manager.jobs.lock().unwrap();
+            let mut jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
             jobs.remove(&job_id);
         }
         {
-            let mut cps = manager.checkpoints.lock().unwrap();
+            let mut cps = manager.checkpoints.lock().unwrap_or_else(|p| p.into_inner());
             cps.remove(&job_id);
         }
         manager.persist_to_disk();
@@ -2920,14 +2958,16 @@ async fn copy_large_file_single_read_multi_write(
                             // Wait until `idx` is inside the active sliding window
                             {
                                 let (lock, cvar) = &*win_ref;
-                                let mut limit = lock.lock().unwrap();
+                                let mut limit = lock.lock().unwrap_or_else(|p| p.into_inner());
                                 while idx >= *limit {
                                     if ctrl_ref.load(Ordering::Relaxed) != CTRL_RUNNING {
                                         let _ = tx_ref.send(Err("INTERRUPTED".to_string()));
                                         return;
                                     }
-                                    let res = cvar.wait_timeout(limit, Duration::from_millis(100)).unwrap();
-                                    limit = res.0;
+                                    match cvar.wait_timeout(limit, Duration::from_millis(100)) {
+                                        Ok(res) => limit = res.0,
+                                        Err(poisoned) => limit = poisoned.into_inner().0,
+                                    }
                                 }
                             }
 
@@ -2964,7 +3004,7 @@ async fn copy_large_file_single_read_multi_write(
                 while next_expected < total_chunks {
                     if ctrl_owned.load(Ordering::Relaxed) != CTRL_RUNNING {
                         let (lock, cvar) = &*window_pair;
-                        *lock.lock().unwrap() = u64::MAX;
+                        *lock.lock().unwrap_or_else(|p| p.into_inner()) = u64::MAX;
                         cvar.notify_all();
                         return Err("INTERRUPTED".to_string());
                     }
@@ -2972,7 +3012,7 @@ async fn copy_large_file_single_read_multi_write(
                     let (idx, chunk_bytes) = loop {
                         if ctrl_owned.load(Ordering::Relaxed) != CTRL_RUNNING {
                             let (lock, cvar) = &*window_pair;
-                            *lock.lock().unwrap() = u64::MAX;
+                            *lock.lock().unwrap_or_else(|p| p.into_inner()) = u64::MAX;
                             cvar.notify_all();
                             return Err("INTERRUPTED".to_string());
                         }
@@ -2980,7 +3020,7 @@ async fn copy_large_file_single_read_multi_write(
                             Ok(Ok(pair)) => break pair,
                             Ok(Err(e)) => {
                                 let (lock, cvar) = &*window_pair;
-                                *lock.lock().unwrap() = u64::MAX;
+                                *lock.lock().unwrap_or_else(|p| p.into_inner()) = u64::MAX;
                                 cvar.notify_all();
                                 return Err(e);
                             }
@@ -2999,7 +3039,7 @@ async fn copy_large_file_single_read_multi_write(
                             loop {
                                 if ctrl_owned.load(Ordering::Relaxed) != CTRL_RUNNING {
                                     let (lock, cvar) = &*window_pair;
-                                    *lock.lock().unwrap() = u64::MAX;
+                                    *lock.lock().unwrap_or_else(|p| p.into_inner()) = u64::MAX;
                                     cvar.notify_all();
                                     return Err("INTERRUPTED".to_string());
                                 }
@@ -3010,7 +3050,7 @@ async fn copy_large_file_single_read_multi_write(
                                     }
                                     Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
                                         let (lock, cvar) = &*window_pair;
-                                        *lock.lock().unwrap() = u64::MAX;
+                                        *lock.lock().unwrap_or_else(|p| p.into_inner()) = u64::MAX;
                                         cvar.notify_all();
                                         return Err("INTERRUPTED".to_string());
                                     }
@@ -3023,7 +3063,7 @@ async fn copy_large_file_single_read_multi_write(
                     // Advance window limit so `pread` workers stay fed
                     {
                         let (lock, cvar) = &*window_pair;
-                        let mut limit = lock.lock().unwrap();
+                        let mut limit = lock.lock().unwrap_or_else(|p| p.into_inner());
                         let new_limit = next_expected + max_in_flight;
                         if new_limit > *limit {
                             *limit = new_limit;
@@ -3094,7 +3134,10 @@ async fn copy_large_file_single_read_multi_write(
             for handle in writer_handles {
                 let _ = handle.await;
             }
-            cleanup_part_files(resolved_destinations);
+            for dest_root in resolved_destinations {
+                let temp_dest = dest_root.join(format!("{}.hardback.part", rel_path));
+                let _ = fs::remove_file(temp_dest);
+            }
             return Err(e);
         }
     };
@@ -3102,25 +3145,10 @@ async fn copy_large_file_single_read_multi_write(
     Ok(source_hash)
 }
 
-fn cleanup_part_files(resolved_destinations: &[PathBuf]) {
-    for dest_root in resolved_destinations {
-        if !dest_root.exists() {
-            continue;
-        }
-        for entry in WalkDir::new(dest_root).into_iter().filter_map(|e| e.ok()) {
-            if entry.file_type().is_file()
-                && entry.file_name().to_string_lossy().ends_with(".hardback.part")
-            {
-                let _ = fs::remove_file(entry.path());
-            }
-        }
-    }
-}
-
 /// Removes all files and newly created destination directories written by a cancelled transfer
 /// so no incomplete or unwanted files remain on the target drive.
 pub fn purge_cancelled_job(cp: &JobCheckpoint) {
-    cleanup_part_files(&cp.resolved_destinations);
+    // 1. Delete every file written during this job across all destinations
 
     // 1. Delete every file written during this job across all destinations
     for dest_root in &cp.resolved_destinations {
@@ -3212,7 +3240,7 @@ fn emit_throttled_metrics(
 
     // Abort metrics emission if job was paused, cancelled, or failed
     {
-        let flags = manager.control_flags.lock().unwrap();
+        let flags = manager.control_flags.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(flag) = flags.get(job_id) {
             if flag.load(Ordering::Relaxed) != CTRL_RUNNING {
                 return;
@@ -3249,6 +3277,18 @@ fn emit_throttled_metrics(
         st.eta_seconds = eta_seconds;
         st.elapsed_seconds = start_instant.elapsed().as_secs_f64();
     });
+
+    // Gentle non-blocking tray status update at ~1s interval, never blocking the I/O worker
+    static LAST_TRAY_TICK: AtomicU64 = AtomicU64::new(0);
+    let now_ms = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let last_ms = LAST_TRAY_TICK.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(last_ms) >= 1000 {
+        LAST_TRAY_TICK.store(now_ms, Ordering::Relaxed);
+        refresh_tray_status(app, manager);
+    }
 }
 
 fn update_job_state(
@@ -3258,7 +3298,7 @@ fn update_job_state(
     mutate: impl FnOnce(&mut TransferJobState),
 ) {
     let updated = {
-        let mut jobs = manager.jobs.lock().unwrap();
+        let mut jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(st) = jobs.get_mut(job_id) {
             mutate(st);
             Some(st.clone())
@@ -3268,14 +3308,16 @@ fn update_job_state(
     };
     if let Some(state) = updated {
         let _ = app.emit("transfer-progress", &state);
-        refresh_tray_status(app, manager);
     }
 }
 
 #[cfg(target_os = "macos")]
 pub fn refresh_tray_status(app: &AppHandle, manager: &EngineManager) {
-    if let Some(tray) = app.tray_by_id("hardback-tray") {
-        let jobs = manager.jobs.lock().unwrap();
+    let title_to_set = {
+        let jobs = match manager.jobs.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
 
         // 1. Prioritize active transfer: copying or verifying
         let active_job = jobs.values().find(|j| j.status == "copying" || j.status == "verifying");
@@ -3288,27 +3330,22 @@ pub fn refresh_tray_status(app: &AppHandle, manager: &EngineManager) {
             } else {
                 format!(" {:.0}%", state.progress_percent)
             };
-            let _ = tray.set_title(Some(title));
-            return;
+            Some(title)
+        } else if jobs.values().any(|j| j.status == "paused") {
+            Some(" En pause".to_string())
+        } else if jobs.values().any(|j| j.status == "queued") {
+            Some(" En file…".to_string())
+        } else {
+            None
         }
+    };
 
-        // 2. Check if any transfer is paused
-        let paused_job = jobs.values().find(|j| j.status == "paused");
-        if paused_job.is_some() {
-            let _ = tray.set_title(Some(" En pause".to_string()));
-            return;
+    let app_handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(tray) = app_handle.tray_by_id("hardback-tray") {
+            let _ = tray.set_title(title_to_set);
         }
-
-        // 3. Check if any transfer is queued
-        let queued_job = jobs.values().find(|j| j.status == "queued");
-        if queued_job.is_some() {
-            let _ = tray.set_title(Some(" En file…".to_string()));
-            return;
-        }
-
-        // 4. No active/paused/queued transfer -> reset menu bar bubble to clear
-        let _ = tray.set_title(None::<String>);
-    }
+    });
 }
 
 #[cfg(not(target_os = "macos"))]

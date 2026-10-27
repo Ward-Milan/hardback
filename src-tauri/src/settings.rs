@@ -46,7 +46,7 @@ impl Default for AppSettings {
             smart_cascading: true,
             fast_inline_verify_only: false,
             turbo_io: true,
-            ignore_junk_files: true,
+            ignore_junk_files: false,
             ignore_camera_proxies: false,
             write_reports_on_disk: false,
             sort_by_media_type: false,

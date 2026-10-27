@@ -377,9 +377,16 @@ export default function Menulet() {
 
   const handleCancel = async (jobId: string) => {
     try {
-      setActiveJobs((prev) => prev.filter((j) => j.id !== jobId));
+      setActiveJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId
+            ? { ...j, status: "cancelled", phaseLabel: "Annulation en cours…" }
+            : j
+        )
+      );
       const remaining = await invoke<TransferJobState[]>("cancel_transfer", { jobId });
       setActiveJobs(remaining || []);
+      showToast("Transfert annulé.");
     } catch (err) {
       console.error(err);
       refreshActiveJobs();

@@ -930,7 +930,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Top Notion Dark Minimalist Header */}
+      {/* Top Minimalist Header */}
       <header className="h-13 px-6 border-b border-[#2A2A2A] flex items-center justify-between bg-[#191919] shrink-0 z-10 py-3">
         <div className="flex items-center gap-3">
           <HardbackCascadeLogo className="w-8 h-8 drop-shadow-md transition-transform hover:scale-105" />
@@ -2313,7 +2313,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ================= VISUAL CERTIFICATE MODAL (MODERN NOTION/APPLE STYLE + PDF PRINT) ================= */}
+      {/* ================= VISUAL CERTIFICATE MODAL ================= */}
       {certificateModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-[#1E1E1E] border border-[#333333] rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">

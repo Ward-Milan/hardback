@@ -42,7 +42,7 @@ Le package d'installation autonome macOS est prêt à l'emploi :
 
 Hardback est une application fièrement développée en **Vibe Coding** avec **Google Antigravity** en pair-programming assisté par IA.
 
-De la conception du pipeline asynchrone non mis en cache (`F_NOCACHE` POSIX natif en Rust), au contournement des limitations de bande passante sur cartes SD par lissage dynamique, en passant par le cycle de vie hybride inspiré de CleanMyMac (menulet autonome en tâche de fond + fermeture de fenêtre sans coupure de transfert), l'ensemble du projet a été itéré, débogué et optimisé en temps réel avec des exigences de niveau cinéma.
+De la conception du pipeline asynchrone non mis en cache (`F_NOCACHE` POSIX natif en Rust), au contournement des limitations de bande passante sur cartes SD par lissage dynamique, en passant par le cycle de vie en arrière-plan natif macOS (menulet autonome dans la barre des menus + fermeture de fenêtre sans coupure de transfert), l'ensemble du projet a été itéré, débogué et optimisé en temps réel avec des exigences de niveau cinéma.
 
 ---
 
@@ -71,12 +71,12 @@ Mini-application compagnon ultra-légère accessible depuis la barre des menus m
 * Réduit considérablement l'usure thermique des cartes mémoire et divise par 2 ou 3 le temps d'ingestion global.
 
 ### 🛡️ Multi-Moteur de Hashage Certifié
-* **XXH64** : Standard cinéma universel compatible avec Silverstack, DaVinci Resolve Studio et les fichiers `.mhl`.
+* **XXH64** : Standard de référence de l'industrie cinématographique et des manifestes `.mhl` (ASC-MHL).
 * **XXH3** : Hash ultra-véloce avec accélération vectorielle SIMD (Apple Silicon NEON).
 * **MD5** : Standard contractuel requis pour les flux Broadcast & chaînes TV.
 * **SHA-256** : Standard cryptographique haute sécurité pour les archives gouvernementales et patrimoniales.
 
-### 🟢 Cycle de Vie CleanMyMac (Barre des Menus)
+### 🟢 Compagnon Menulet & Arrière-Plan Natif (Barre des Menus)
 * **Mode arrière-plan discret** : Fermer la fenêtre principale via la croix rouge `(X)` masque la fenêtre mais ne quitte **jamais** l'application ni ne coupe les transferts.
 * **Hardback Express** : Une icône dans la barre des menus permet de suivre l'avancement, suspendre ou annuler un transfert, et assigner rapidement les cartes SD branchées.
 * **Boutons d'éjection intégrés** : Éjection sécurisée (`⏏`) en 1 clic des périphériques externes directement depuis le menu rapide.

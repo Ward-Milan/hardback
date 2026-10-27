@@ -453,7 +453,7 @@ pub fn run() {
             }
 
             // When main window close button (X) is clicked, hide into accessory mode instead of quitting,
-            // keeping Hardback active in the macOS menu bar like CleanMyMac
+            // keeping Hardback active in the macOS menu bar
             if let Some(main_win) = app.get_webview_window("main") {
                 let _ = main_win.set_theme(Some(tauri::Theme::Dark));
                 let m_clone = main_win.clone();

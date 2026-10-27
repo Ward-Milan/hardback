@@ -328,12 +328,23 @@ export default function App() {
       .then(setSettings)
       .catch(console.error);
 
+    // Refresh immediately whenever the window regains focus
+    const onFocus = () => {
+      refreshDevices();
+    };
+    window.addEventListener("focus", onFocus);
+
+    // Gentle 10s poll ONLY when the window is actively focused and visible to the user
     const interval = setInterval(() => {
-      if (document.visibilityState === "visible") {
+      if (document.hasFocus() && document.visibilityState === "visible") {
         refreshDevices();
       }
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 10000);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      clearInterval(interval);
+    };
   }, [refreshDevices]);
 
   useEffect(() => {

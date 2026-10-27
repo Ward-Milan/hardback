@@ -334,6 +334,7 @@ async fn open_main_window(app: AppHandle) -> Result<(), String> {
         let _ = win.show();
         let _ = win.unminimize();
         let _ = win.set_focus();
+        let _ = app.emit("devices-changed", ());
     }
     Ok(())
 }
@@ -397,6 +398,7 @@ pub fn run() {
                                 let _ = win.show();
                                 let _ = win.unminimize();
                                 let _ = win.set_focus();
+                                let _ = app.emit("devices-changed", ());
                             }
                         }
                         "quit" => {
@@ -436,6 +438,7 @@ pub fn run() {
                                 }));
                                 let _ = menulet.show();
                                 let _ = menulet.set_focus();
+                                let _ = handle.emit("devices-changed", ());
                             }
                         }
                     }
@@ -516,6 +519,7 @@ pub fn run() {
                         let _ = win.show();
                         let _ = win.unminimize();
                         let _ = win.set_focus();
+                        let _ = app_handle.emit("devices-changed", ());
                     }
                 }
                 _ => {}

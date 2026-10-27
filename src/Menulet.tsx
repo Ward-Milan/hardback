@@ -194,12 +194,24 @@ export default function Menulet() {
       .then(setSettings)
       .catch(console.error);
 
+    // Refresh immediately whenever the menulet is focused or opened
+    const onFocus = () => {
+      refreshDevices();
+      refreshActiveJobs();
+    };
+    window.addEventListener("focus", onFocus);
+
+    // Gentle 10s poll ONLY when the popover is actively focused by the user
     const devInterval = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
+      if (document.hasFocus() && document.visibilityState === "visible") {
         refreshDevices();
       }
-    }, 3000);
-    return () => window.clearInterval(devInterval);
+    }, 10000);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(devInterval);
+    };
   }, [refreshDevices, refreshActiveJobs]);
 
   useEffect(() => {

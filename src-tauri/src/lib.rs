@@ -268,7 +268,7 @@ fn dismiss_transfer(
     crate::engine::refresh_tray_status(&app, &manager);
     let _ = app.emit("transfer-cancelled", &job_id);
 
-    let jobs = manager.jobs.lock().unwrap();
+    let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
     let mut list: Vec<TransferJobState> = jobs.values().cloned().collect();
     list.sort_by(|a, b| b.started_at.cmp(&a.started_at));
     list
@@ -276,7 +276,7 @@ fn dismiss_transfer(
 
 #[tauri::command]
 fn get_active_transfers(manager: State<'_, Arc<EngineManager>>) -> Vec<TransferJobState> {
-    let jobs = manager.jobs.lock().unwrap();
+    let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
     let mut list: Vec<TransferJobState> = jobs.values().cloned().collect();
     list.sort_by(|a, b| b.started_at.cmp(&a.started_at));
     list

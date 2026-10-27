@@ -2282,23 +2282,20 @@ async fn run_ingest_pipeline(
 
     manager.persist_to_disk();
 
+    let completed_job_state = {
+        let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
+        jobs.get(&job_id).cloned()
+    };
+    if let Some(ref completed_st) = completed_job_state {
+        let _ = app.emit("transfer-completed", completed_st);
+    }
+    refresh_tray_status(&app, &manager);
+
     if settings.sound_notification {
         #[cfg(target_os = "macos")]
         {
             let _ = Command::new("afplay")
                 .arg("/System/Library/Sounds/Glass.aiff")
-                .spawn();
-
-            let clean_title = source_name.replace(['"', '\''], "");
-            let notif_script = format!(
-                "display notification \"{} fichiers certifiés ({}) à {:.0} Mo/s\" with title \"Hardback — Transfert Terminé\" subtitle \"{}\"",
-                verified_records.len(),
-                format_bytes(total_bytes),
-                avg_speed_bps / (1024.0 * 1024.0),
-                clean_title
-            );
-            let _ = Command::new("osascript")
-                .args(["-e", &notif_script])
                 .spawn();
         }
     }
@@ -3308,6 +3305,9 @@ fn update_job_state(
     };
     if let Some(state) = updated {
         let _ = app.emit("transfer-progress", &state);
+        if state.status == "completed" || state.status == "paused" || state.status == "cancelled" || state.status == "failed" {
+            refresh_tray_status(app, manager);
+        }
     }
 }
 
@@ -3412,5 +3412,6 @@ fn finalize_job_non_complete(
         };
         let updated_history = save_or_update_history_entry(history_entry);
         let _ = app.emit("history-updated", &updated_history);
+        refresh_tray_status(app, manager);
     }
 }

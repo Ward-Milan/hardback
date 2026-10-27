@@ -421,20 +421,38 @@ pub fn run() {
                                 let _ = menulet.hide();
                             } else {
                                 let win_w = 580.0;
-                                let (pos_x, pos_y) = match rect.position {
-                                    tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
-                                    tauri::Position::Logical(l) => (l.x, l.y),
+                                let scale = menulet.scale_factor().unwrap_or(2.0);
+                                let pos: tauri::LogicalPosition<f64> = rect.position.to_logical(scale);
+                                let size: tauri::LogicalSize<f64> = rect.size.to_logical(scale);
+
+                                let tray_center_x = pos.x + (size.width / 2.0);
+                                let ideal_x = tray_center_x - (win_w / 2.0);
+
+                                // Query monitor bounds to guarantee window never overflows off screen edges
+                                let monitor = menulet
+                                    .current_monitor()
+                                    .ok()
+                                    .flatten()
+                                    .or_else(|| menulet.primary_monitor().ok().flatten());
+
+                                let (screen_x, screen_w) = if let Some(mon) = monitor {
+                                    let mon_scale = mon.scale_factor();
+                                    let mon_pos = mon.position().to_logical::<f64>(mon_scale);
+                                    let mon_size = mon.size().to_logical::<f64>(mon_scale);
+                                    (mon_pos.x, mon_size.width)
+                                } else {
+                                    (0.0, 1512.0)
                                 };
-                                let (size_w, size_h) = match rect.size {
-                                    tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
-                                    tauri::Size::Logical(l) => (l.width, l.height),
-                                };
-                                let tray_center_x = pos_x + (size_w / 2.0);
-                                let x = (tray_center_x - (win_w / 2.0)).max(10.0);
-                                let y = pos_y + size_h + 4.0;
-                                let _ = menulet.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                                    x: x as i32,
-                                    y: y as i32,
+
+                                let margin = 12.0;
+                                let min_x = screen_x + margin;
+                                let max_x = (screen_x + screen_w - win_w - margin).max(min_x);
+                                let clamped_x = ideal_x.max(min_x).min(max_x);
+                                let y = pos.y + size.height + 4.0;
+
+                                let _ = menulet.set_position(tauri::Position::Logical(tauri::LogicalPosition {
+                                    x: clamped_x,
+                                    y,
                                 }));
                                 let _ = menulet.show();
                                 let _ = menulet.set_focus();

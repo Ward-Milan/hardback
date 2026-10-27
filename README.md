@@ -26,13 +26,13 @@
 Le package d'installation autonome macOS est prêt à l'emploi :
 
 <p align="center">
-  <a href="Hardback_0.1.0.dmg">
+  <a href="https://github.com/Ward-Milan/hardback/releases/latest/download/Hardback_0.1.0.dmg">
     <img src="https://img.shields.io/badge/⬇️_Télécharger_Hardback_v0.1.0-(2.5_Mo)-10B981?style=for-the-badge&logo=apple&logoColor=white" height="42" alt="Télécharger Hardback DMG" />
   </a>
 </p>
 
 ### Installation sur macOS :
-1. Téléchargez et ouvrez **[`Hardback_0.1.0.dmg`](Hardback_0.1.0.dmg)**.
+1. Téléchargez et ouvrez **[`Hardback_0.1.0.dmg`](https://github.com/Ward-Milan/hardback/releases/latest/download/Hardback_0.1.0.dmg)** (ou directement depuis le dépôt : [Hardback_0.1.0.dmg](Hardback_0.1.0.dmg)).
 2. Glissez-déposez **Hardback.app** dans votre dossier **/Applications**.
 3. *Note de sécurité macOS* : Comme il s'agit d'une version open-source compilée directement sans certificat payant Apple Developer, au premier lancement, faites **Clic droit > Ouvrir** (ou autorisez dans *Réglages Système > Confidentialité et sécurité > Ouvrir quand même*).
 
@@ -139,7 +139,7 @@ Hardback/
 
 ### Cloner et installer les dépendances
 ```bash
-git clone https://github.com/username/hardback.git
+git clone https://github.com/Ward-Milan/hardback.git
 cd hardback
 npm install
 ```
@@ -166,3 +166,12 @@ Distribué sous licence open-source **MIT**. Consultez le fichier [LICENSE](LICE
 <p align="center">
   Développé avec passion pour la communauté du cinéma et de la vidéo.
 </p>
+
+Distribué sous licence open-source **MIT**. Consultez le fichier [LICENSE](LICENSE) pour plus de détails.
+
+---
+
+<p align="center">
+  Développé avec passion pour la communauté du cinéma et de la vidéo.
+</p>
+

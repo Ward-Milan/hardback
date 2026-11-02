@@ -84,6 +84,7 @@ export interface TransferJobState {
   destinationPaths: string[];
   createSubfolder: boolean;
   customFolderName?: string | null;
+  resolvedDestinations?: string[];
   algorithm: "xxh64" | "xxh3" | "md5" | "sha256";
   status: "scanning" | "copying" | "verifying" | "paused" | "completed" | "failed" | "cancelled" | "queued";
   phaseLabel: string;

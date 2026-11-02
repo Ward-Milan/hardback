@@ -55,6 +55,8 @@ pub struct TransferJobState {
     pub started_at: String,
     #[serde(default)]
     pub corrupted_videos: Vec<String>,
+    #[serde(default)]
+    pub resolved_destinations: Vec<String>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -993,25 +995,84 @@ pub fn start_ingest_job(
             .unwrap_or_else(|| "Source".to_string())
     };
 
-    let folder_title = custom_folder_name
+    let base_folder_title = custom_folder_name
         .as_ref()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| default_source_name.clone());
 
-    let resolved_destinations: Vec<PathBuf> = destination_paths
-        .iter()
-        .map(|d| {
-            let base = PathBuf::from(d);
-            if create_subfolder
-                && (first_src.is_dir() || is_multi_package || custom_folder_name.is_some())
-            {
-                base.join(&folder_title)
-            } else {
-                base
+    // 1. If an existing job with the EXACT same source and destination is paused, resume it!
+    if existing_job_id.is_none() {
+        let matching_paused_id = {
+            let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
+            jobs.values()
+                .find(|j| {
+                    j.status == "paused"
+                        && j.source_paths == source_paths
+                        && j.destination_paths == destination_paths
+                })
+                .map(|j| j.id.clone())
+        };
+        if let Some(resume_id) = matching_paused_id {
+            return resume_existing_job(app, manager, &resume_id);
+        }
+    }
+
+    // 2. Resolve destination folders and safely disambiguate if another active transfer is using the exact same folder name
+    let (folder_title, resolved_destinations) = {
+        let mut candidate_title = base_folder_title.clone();
+        let mut disambiguation_num = 2;
+
+        loop {
+            let candidate_resolved: Vec<PathBuf> = destination_paths
+                .iter()
+                .map(|d| {
+                    let base = PathBuf::from(d);
+                    if create_subfolder
+                        && (first_src.is_dir() || is_multi_package || custom_folder_name.is_some())
+                    {
+                        base.join(&candidate_title)
+                    } else {
+                        base
+                    }
+                })
+                .collect();
+
+            if !create_subfolder {
+                break (candidate_title, candidate_resolved);
             }
-        })
-        .collect();
+
+            // Check if any other ACTIVE or PAUSED transfer is currently writing to this exact candidate folder
+            let in_use = {
+                let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
+                let cps = manager.checkpoints.lock().unwrap_or_else(|p| p.into_inner());
+
+                jobs.values().any(|j| {
+                    if existing_job_id.as_deref() == Some(&j.id) {
+                        return false;
+                    }
+                    if j.status == "completed" || j.status == "cancelled" || j.status == "failed" {
+                        return false;
+                    }
+                    if let Some(cp_arc) = cps.get(&j.id) {
+                        if let Ok(cp) = cp_arc.lock() {
+                            if candidate_resolved.iter().any(|cr| cp.resolved_destinations.contains(cr)) {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                })
+            };
+
+            if !in_use {
+                break (candidate_title, candidate_resolved);
+            }
+
+            candidate_title = format!("{} ({})", base_folder_title, disambiguation_num);
+            disambiguation_num += 1;
+        }
+    };
 
     if source_paths.len() == 1 && first_src.is_dir() {
         for dest in &resolved_destinations {
@@ -1021,45 +1082,6 @@ pub fn start_ingest_job(
                     dest.display(),
                     first_src.display()
                 ));
-            }
-        }
-    }
-
-    // Anti-Crash & Collision Prevention:
-    // If a job targeting this destination is already active or paused, handle it safely
-    {
-        let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
-        for existing in jobs.values() {
-            if existing_job_id.as_deref() == Some(&existing.id) {
-                continue;
-            }
-
-            let has_collision = resolved_destinations.iter().any(|new_dest| {
-                existing.destination_paths.iter().any(|d| {
-                    let d_path = PathBuf::from(d);
-                    d_path == *new_dest || new_dest.starts_with(&d_path) || d_path.starts_with(new_dest)
-                })
-            });
-
-            if has_collision {
-                if existing.status == "copying" || existing.status == "verifying" || existing.status == "scanning" {
-                    return Err(format!(
-                        "Un transfert vers cette destination est déjà en cours d'exécution ('{}'). Veuillez attendre sa fin ou le mettre en pause.",
-                        existing.source_name
-                    ));
-                }
-                if existing.status == "paused" {
-                    if existing.source_paths == source_paths {
-                        let resume_id = existing.id.clone();
-                        drop(jobs);
-                        return resume_existing_job(app, manager, &resume_id);
-                    } else {
-                        return Err(format!(
-                            "Un transfert vers cette destination est actuellement en pause ('{}'). Reprenez-le ou annulez-le avant de démarrer un nouveau transfert au même endroit.",
-                            existing.source_name
-                        ));
-                    }
-                }
             }
         }
     }
@@ -1091,12 +1113,18 @@ pub fn start_ingest_job(
         entry
     };
 
+    let resolved_strs: Vec<String> = resolved_destinations
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
     let initial_state = {
         let mut jobs = manager.jobs.lock().unwrap();
         let state = if let Some(existing) = jobs.get_mut(&job_id) {
             existing.status = "copying".to_string();
             existing.phase_label = "Reprise du transfert…".to_string();
             existing.error_message = None;
+            existing.resolved_destinations = resolved_strs;
             existing.clone()
         } else {
             let st = TransferJobState {
@@ -1126,6 +1154,7 @@ pub fn start_ingest_job(
                 report_paths: Vec::new(),
                 started_at: started_at_utc.to_rfc3339(),
                 corrupted_videos: Vec::new(),
+                resolved_destinations: resolved_strs,
             };
             jobs.insert(job_id.clone(), st.clone());
             st
@@ -3319,18 +3348,43 @@ pub fn refresh_tray_status(app: &AppHandle, manager: &EngineManager) {
             Err(p) => p.into_inner(),
         };
 
-        // 1. Prioritize active transfer: copying or verifying
-        let active_job = jobs.values().find(|j| j.status == "copying" || j.status == "verifying");
-        if let Some(state) = active_job {
-            let speed_mb = state.speed_bps / (1024.0 * 1024.0);
-            let title = if speed_mb >= 1024.0 {
-                format!(" {:.0}% • {:.2} Go/s", state.progress_percent, speed_mb / 1024.0)
-            } else if speed_mb > 0.0 {
-                format!(" {:.0}% • {:.0} Mo/s", state.progress_percent, speed_mb)
+        // 1. Prioritize active transfers: copying or verifying
+        let active_jobs: Vec<_> = jobs
+            .values()
+            .filter(|j| j.status == "copying" || j.status == "verifying")
+            .collect();
+
+        if !active_jobs.is_empty() {
+            if active_jobs.len() == 1 {
+                let state = active_jobs[0];
+                let speed_mb = state.speed_bps / (1024.0 * 1024.0);
+                let title = if speed_mb >= 1024.0 {
+                    format!(" {:.0}% • {:.2} Go/s", state.progress_percent, speed_mb / 1024.0)
+                } else if speed_mb > 0.0 {
+                    format!(" {:.0}% • {:.0} Mo/s", state.progress_percent, speed_mb)
+                } else {
+                    format!(" {:.0}%", state.progress_percent)
+                };
+                Some(title)
             } else {
-                format!(" {:.0}%", state.progress_percent)
-            };
-            Some(title)
+                let total_copied: u64 = active_jobs.iter().map(|j| j.copied_bytes).sum();
+                let total_bytes: u64 = active_jobs.iter().map(|j| j.total_bytes).sum();
+                let total_speed: f64 = active_jobs.iter().map(|j| j.speed_bps).sum();
+                let avg_progress = if total_bytes > 0 {
+                    ((total_copied as f64) / (total_bytes as f64) * 100.0).clamp(0.0, 99.9)
+                } else {
+                    0.0
+                };
+                let speed_mb = total_speed / (1024.0 * 1024.0);
+                let title = if speed_mb >= 1024.0 {
+                    format!(" ({}×) {:.0}% • {:.2} Go/s", active_jobs.len(), avg_progress, speed_mb / 1024.0)
+                } else if speed_mb > 0.0 {
+                    format!(" ({}×) {:.0}% • {:.0} Mo/s", active_jobs.len(), avg_progress, speed_mb)
+                } else {
+                    format!(" ({}×) {:.0}%", active_jobs.len(), avg_progress)
+                };
+                Some(title)
+            }
         } else if jobs.values().any(|j| j.status == "paused") {
             Some(" En pause".to_string())
         } else if jobs.values().any(|j| j.status == "queued") {
@@ -3343,7 +3397,8 @@ pub fn refresh_tray_status(app: &AppHandle, manager: &EngineManager) {
     let app_handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(tray) = app_handle.tray_by_id("hardback-tray") {
-            let _ = tray.set_title(title_to_set);
+            let title = title_to_set.unwrap_or_default();
+            let _ = tray.set_title(Some(title));
         }
     });
 }

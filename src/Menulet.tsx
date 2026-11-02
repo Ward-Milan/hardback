@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Zap,
   HardDrive,
+  Plus,
 } from "lucide-react";
 import {
   StorageDevice,
@@ -157,6 +158,8 @@ export default function Menulet() {
   const [sourceInspection, setSourceInspection] = useState<PathInspection | null>(null);
   const [destInspection, setDestInspection] = useState<PathInspection | null>(null);
   const [activeJobs, setActiveJobs] = useState<TransferJobState[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [showNewTransfer, setShowNewTransfer] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -302,6 +305,7 @@ export default function Menulet() {
     try {
       const insp = await invoke<PathInspection>("inspect_path", { path: dev.mountPoint });
       setSourceInspection(insp);
+      setShowNewTransfer(true);
       showToast(`Source définie : ${dev.name}`);
     } catch (err) {
       setErrorMsg(String(err));
@@ -312,6 +316,7 @@ export default function Menulet() {
     try {
       const insp = await invoke<PathInspection>("inspect_path", { path: dev.mountPoint });
       setDestInspection(insp);
+      setShowNewTransfer(true);
       showToast(`Destination définie : ${dev.name}`);
     } catch (err) {
       setErrorMsg(String(err));
@@ -351,6 +356,7 @@ export default function Menulet() {
       showToast("Transfert sécurisé démarré");
       setSourceInspection(null);
       setDestInspection(null);
+      setShowNewTransfer(false);
       refreshActiveJobs();
     } catch (err) {
       setErrorMsg(String(err));
@@ -417,9 +423,11 @@ export default function Menulet() {
     }
   };
 
-  const primaryJob = activeJobs.find(
+  const runningJobs = activeJobs.filter(
     (j) => j.status === "copying" || j.status === "verifying" || j.status === "paused" || j.status === "queued"
   );
+  const activeJob = runningJobs.find((j) => j.id === selectedJobId) || runningJobs[0];
+  const isViewingJob = !showNewTransfer && !!activeJob;
 
   return (
     <div className="w-screen h-screen p-1.5 bg-transparent flex flex-col items-center justify-center font-sans select-none antialiased">
@@ -433,10 +441,10 @@ export default function Menulet() {
               <span className="font-semibold text-xs text-[#EDEDEC] tracking-tight">Hardback Ingest</span>
               <span
                 className={`w-2 h-2 rounded-full ${
-                  primaryJob
-                    ? primaryJob.status === "paused"
-                      ? "bg-[#F59E0B]"
-                      : "bg-[#10B981] animate-pulse"
+                  runningJobs.length > 0
+                    ? runningJobs.some((j) => j.status === "copying" || j.status === "verifying")
+                      ? "bg-[#10B981] animate-pulse"
+                      : "bg-[#F59E0B]"
                     : "bg-[#10B981]"
                 }`}
               />
@@ -488,40 +496,97 @@ export default function Menulet() {
         <div className="flex-1 p-3 overflow-hidden grid grid-cols-2 gap-3 min-h-0">
           {/* LEFT COLUMN: ACTIVE TRANSFER OR SOURCE & DESTINATION CARDS */}
           <div className="flex flex-col justify-between space-y-2 min-h-0">
-            {primaryJob ? (
+            {/* MULTI-TRANSFER TABS STRIP */}
+            {runningJobs.length > 0 && (
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 shrink-0">
+                {runningJobs.map((j, idx) => {
+                  const isSelected = isViewingJob && j.id === activeJob?.id;
+                  return (
+                    <button
+                      key={j.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedJobId(j.id);
+                        setShowNewTransfer(false);
+                      }}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1.5 transition-all truncate max-w-[110px] ${
+                        isSelected
+                          ? "bg-[#2F2F2F] text-[#EDEDEC] border border-[#444444]"
+                          : "bg-[#1E1E1E] text-[#888888] hover:text-[#EDEDEC] hover:bg-[#252525] border border-transparent"
+                      }`}
+                      title={`${j.sourceName} (${j.progressPercent.toFixed(1)}%)`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          j.status === "paused"
+                            ? "bg-[#F59E0B]"
+                            : j.status === "queued"
+                            ? "bg-[#9CA3AF]"
+                            : "bg-[#10B981] animate-pulse"
+                        }`}
+                      />
+                      <span className="truncate">{j.sourceName || `Job ${idx + 1}`}</span>
+                      <span className="text-[9px] font-mono text-[#FBBF24]">
+                        {j.progressPercent.toFixed(0)}%
+                      </span>
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => setShowNewTransfer(true)}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all shrink-0 ${
+                    showNewTransfer
+                      ? "bg-[#F59E0B]/20 text-[#FBBF24] border border-[#F59E0B]/40"
+                      : "bg-[#1E1E1E] text-[#9B9A97] hover:text-[#EDEDEC] hover:bg-[#252525] border border-[#2F2F2F]"
+                  }`}
+                  title="Lancer un nouveau transfert simultané"
+                >
+                  <Plus className="w-3 h-3 text-[#FBBF24]" />
+                  <span>Nouveau</span>
+                </button>
+              </div>
+            )}
+
+            {isViewingJob && activeJob ? (
               /* LIVE TRANSFER TELEMETRY */
               <div className="bg-[#222222] border border-[#333333] rounded-xl p-3 flex-1 flex flex-col justify-between space-y-2">
                 <div className="flex items-center justify-between">
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider ${
-                      primaryJob.status === "queued"
+                      activeJob.status === "queued"
                         ? "bg-[#F59E0B]/20 text-[#FBBF24]"
-                        : primaryJob.status === "paused"
+                        : activeJob.status === "paused"
                         ? "bg-[#6B7280]/20 text-[#9CA3AF]"
                         : "bg-[#10B981]/20 text-[#34D399]"
                     }`}
                   >
-                    {primaryJob.status === "queued"
+                    {activeJob.status === "queued"
                       ? "En file d'attente HDD"
-                      : primaryJob.status === "paused"
+                      : activeJob.status === "paused"
                       ? "En pause"
-                      : primaryJob.status === "verifying"
+                      : activeJob.status === "verifying"
                       ? "Vérification Bit-à-Bit"
                       : "Copie en cours"}
                   </span>
                   <span className="font-mono text-xs font-bold text-[#EDEDEC]">
-                    {primaryJob.progressPercent.toFixed(1)}%
+                    {activeJob.progressPercent.toFixed(1)}%
                   </span>
                 </div>
 
                 <div className="space-y-1 text-xs">
                   <div className="truncate text-[#EDEDEC] font-semibold flex items-center gap-1.5">
                     <span className="text-[#FBBF24] font-medium text-[11px]">Source :</span>
-                    <span className="truncate">{primaryJob.sourceName}</span>
+                    <span className="truncate">{activeJob.sourceName}</span>
                   </div>
                   <div className="truncate text-[#9B9A97] text-[11px] flex items-center gap-1.5">
                     <span className="text-[#34D399] font-medium">Cible :</span>
-                    <span className="truncate">{primaryJob.destinationPaths[0] || "Destination"}</span>
+                    <span className="truncate">
+                      {(activeJob.resolvedDestinations && activeJob.resolvedDestinations[0]) ||
+                        activeJob.destinationPaths[0] ||
+                        "Destination"}
+                    </span>
                   </div>
                 </div>
 
@@ -529,13 +594,13 @@ export default function Menulet() {
                   <div>
                     <span className="text-[10px] text-[#9B9A97] block">Vitesse</span>
                     <span className="text-xs font-mono font-bold text-[#FBBF24]">
-                      {formatSpeed(primaryJob.speedBps)}
+                      {formatSpeed(activeJob.speedBps)}
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-[#9B9A97] block">Temps restant</span>
                     <span className="text-xs font-mono font-bold text-[#EDEDEC]">
-                      {formatEta(primaryJob.etaSeconds)}
+                      {formatEta(activeJob.etaSeconds)}
                     </span>
                   </div>
                 </div>
@@ -543,14 +608,14 @@ export default function Menulet() {
                 <div className="w-full bg-[#151515] h-2 rounded-full overflow-hidden border border-[#2B2B2B]">
                   <div
                     className="bg-gradient-to-r from-[#F59E0B] via-[#EAB308] to-[#10B981] h-full transition-all duration-300 ease-out"
-                    style={{ width: `${Math.min(100, Math.max(0, primaryJob.progressPercent))}%` }}
+                    style={{ width: `${Math.min(100, Math.max(0, activeJob.progressPercent))}%` }}
                   />
                 </div>
 
                 <div className="flex items-center gap-1.5 pt-0.5">
-                  {primaryJob.status === "paused" ? (
+                  {activeJob.status === "paused" ? (
                     <button
-                      onClick={() => handleResume(primaryJob.id)}
+                      onClick={() => handleResume(activeJob.id)}
                       className="flex-1 py-1.5 rounded-lg bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold text-xs flex items-center justify-center gap-1 transition-colors"
                     >
                       <Play className="w-3 h-3 fill-current" />
@@ -558,7 +623,7 @@ export default function Menulet() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => handlePause(primaryJob.id)}
+                      onClick={() => handlePause(activeJob.id)}
                       className="flex-1 py-1.5 rounded-lg bg-[#2A2A2A] hover:bg-[#333333] border border-[#3A3A3A] text-[#EDEDEC] font-medium text-xs flex items-center justify-center gap-1 transition-colors"
                     >
                       <Pause className="w-3 h-3" />
@@ -567,7 +632,12 @@ export default function Menulet() {
                   )}
 
                   <button
-                    onClick={() => handleReveal(primaryJob.destinationPaths[0])}
+                    onClick={() =>
+                      handleReveal(
+                        (activeJob.resolvedDestinations && activeJob.resolvedDestinations[0]) ||
+                          activeJob.destinationPaths[0]
+                      )
+                    }
                     title="Afficher dans le Finder"
                     className="p-1.5 rounded-lg bg-[#2A2A2A] hover:bg-[#333333] border border-[#3A3A3A] text-[#34D399] transition-colors"
                   >
@@ -575,7 +645,7 @@ export default function Menulet() {
                   </button>
 
                   <button
-                    onClick={() => handleCancel(primaryJob.id)}
+                    onClick={() => handleCancel(activeJob.id)}
                     title="Annuler le transfert"
                     className="p-1.5 rounded-lg bg-[#2A2A2A] hover:bg-[#EF4444]/20 border border-[#3A3A3A] text-[#EF4444] transition-colors"
                   >

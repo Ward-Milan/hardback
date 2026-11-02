@@ -772,6 +772,8 @@ export default function App() {
         });
       }
       setIsDrawerOpen(true);
+      setSelectedSources([]);
+      setCustomFolderName("");
     } catch (err) {
       setErrorBanner(String(err));
     }

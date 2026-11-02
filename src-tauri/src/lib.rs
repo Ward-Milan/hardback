@@ -2,6 +2,7 @@ pub mod engine;
 pub mod history;
 pub mod report;
 pub mod settings;
+pub mod updater;
 pub mod volumes;
 
 use engine::{
@@ -535,7 +536,9 @@ pub fn run() {
             create_demo_environment,
             open_main_window,
             hide_menulet_window,
-            pick_folder
+            pick_folder,
+            updater::check_for_updates,
+            updater::install_update
         ])
         .build(tauri::generate_context!())
         .expect("error while building Hardback tauri application")

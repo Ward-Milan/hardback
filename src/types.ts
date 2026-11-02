@@ -124,3 +124,16 @@ export interface IngestHistoryEntry {
   reportPaths: string[];
   createdAt: string;
 }
+
+export interface UpdateCheckInfo {
+  updateAvailable: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  releaseName: string;
+  releaseNotes: string;
+  publishedAt: string;
+  assetName: string;
+  assetSize: number;
+  assetUpdatedAt: string;
+  downloadUrl: string;
+}

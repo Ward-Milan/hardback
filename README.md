@@ -45,7 +45,11 @@ Le package d'installation autonome macOS (Apple Silicon) est prêt à l'emploi :
 ### Installation sur macOS
 1. Téléchargez et ouvrez **[`Hardback_0.1.0.dmg`](https://github.com/Ward-Milan/hardback/releases/latest/download/Hardback_0.1.0.dmg)** (ou directement depuis le dépôt : [Hardback_0.1.0.dmg](Hardback_0.1.0.dmg)).
 2. Glissez-déposez **Hardback.app** dans votre dossier **/Applications**.
-3. *Note de sécurité macOS* : S'agissant d'un binaire open-source distribué sans signature payante Apple Developer, faites **Clic droit > Ouvrir** au premier lancement (ou autorisez l'application dans *Réglages Système > Confidentialité et sécurité > Ouvrir quand même*).
+3. *Note Gatekeeper (macOS Sequoia / Tahoe)* : L'application étant open-source (signée ad-hoc sans certificat Apple Developer payant), si macOS bloque l'ouverture après téléchargement via navigateur, exécutez dans le Terminal :
+   ```bash
+   xattr -cr /Applications/Hardback.app
+   ```
+   (ou autorisez l'application dans *Réglages Système > Confidentialité et sécurité > Ouvrir quand même*).
 
 ---
 

@@ -21,6 +21,17 @@
 
 ---
 
+## Écosystème Hard Suite (macOS)
+
+**Hardback** fait partie de la **Hard Suite**, une collection d'outils natifs macOS dédiés à la sécurité des flux caméra et au sauvetage de médias professionnels :
+
+| Application | Rôle | Fonctionnalités Clés | Dépôt GitHub |
+| :--- | :--- | :--- | :--- |
+| **[Hardback](https://github.com/Ward-Milan/hardback)** | **Ingest & Prévention (Tournage)** | Déchargement multi-destinations en cascade, vérification physique `F_NOCACHE` bit-à-bit (XXH64, XXH3, SHA-256), manifestes ASC-MHL & compagnon barre des menus. | [Ward-Milan/hardback](https://github.com/Ward-Milan/hardback) |
+| **[HardRecover](https://github.com/Ward-Milan/hardrecover)** | **Sauvetage & Réparation (Urgence)** | Récupération de cartes formatées (ExFAT/Carving), reconstruction d'entêtes vidéo/audio tronqués sans ré-encodage, clonage 5 passes `.img` et diagnostic S.M.A.R.T. | [Ward-Milan/hardrecover](https://github.com/Ward-Milan/hardrecover) |
+
+---
+
 ## 📥 Téléchargement Direct (DMG)
 
 Le package d'installation autonome macOS est prêt à l'emploi :
@@ -158,14 +169,6 @@ Le fichier `.dmg` est généré dans `src-tauri/target/release/bundle/dmg/`.
 ---
 
 ## 📄 Licence
-
-Distribué sous licence open-source **MIT**. Consultez le fichier [LICENSE](LICENSE) pour plus de détails.
-
----
-
-<p align="center">
-  Développé avec passion pour la communauté du cinéma et de la vidéo.
-</p>
 
 Distribué sous licence open-source **MIT**. Consultez le fichier [LICENSE](LICENSE) pour plus de détails.
 

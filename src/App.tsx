@@ -2417,6 +2417,17 @@ export default function App() {
                       className="w-full px-3 py-1.5 rounded-lg bg-[#242424] border border-[#383838] text-xs text-[#EDEDEC] focus:border-[#F59E0B] outline-none"
                     />
                   </div>
+
+                  {/* Mentions Légales & Responsabilité */}
+                  <div className="p-3.5 rounded-xl bg-[#141414] border border-[#262626] space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[#9B9A97]">
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#10B981]" />
+                      <span>Cadre d&apos;Utilisation &amp; Responsabilité</span>
+                    </div>
+                    <p className="text-[11px] text-[#787774] leading-relaxed">
+                      Hardback est un utilitaire de déchargement et vérification broadcast open-source (Licence MIT). La copie sécurisée et la vérification d&apos;intégrité s&apos;exécutent localement sur votre matériel. L&apos;utilisateur demeure responsable du contrôle de ses copies et de la préservation de ses médias originaux.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

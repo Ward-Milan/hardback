@@ -146,12 +146,12 @@ impl EngineManager {
 
     pub fn persist_to_disk(&self) {
         let jobs_vec: Vec<TransferJobState> = {
-            let guard = self.jobs.lock().unwrap();
+            let guard = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
             guard.values().cloned().collect()
         };
         let mut cps_plain: HashMap<String, JobCheckpoint> = HashMap::new();
         {
-            let guard = self.checkpoints.lock().unwrap();
+            let guard = self.checkpoints.lock().unwrap_or_else(|p| p.into_inner());
             for (k, v) in guard.iter() {
                 if let Ok(cp) = v.lock() {
                     cps_plain.insert(k.clone(), cp.clone());
@@ -431,8 +431,23 @@ fn check_mxf_health(file_path: &Path) -> VideoHealth {
     VideoHealth::Ok
 }
 
+pub(crate) fn validate_webhook_url(url: &str) -> Result<(), String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("URL webhook vide.".to_string());
+    }
+    if trimmed.starts_with('-') || trimmed.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("URL webhook invalide.".to_string());
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("https://") || lower.len() <= "https://".len() {
+        return Err("Le webhook doit utiliser le protocole HTTPS.".to_string());
+    }
+    Ok(())
+}
+
 /// Reads a destination file from physical storage with `F_NOCACHE` enabled to compute its physical checksum.
-fn compute_file_hash_nocache(
+pub(crate) fn compute_file_hash_nocache(
     path: &Path,
     algo: &str,
     ctrl_flag: &AtomicU8,
@@ -1091,13 +1106,13 @@ pub fn start_ingest_job(
 
     let ctrl_flag = Arc::new(AtomicU8::new(CTRL_RUNNING));
     let checkpoint = {
-        let mut cps = manager.checkpoints.lock().unwrap();
+        let mut cps = manager.checkpoints.lock().unwrap_or_else(|p| p.into_inner());
         let entry = cps
             .entry(job_id.clone())
             .or_insert_with(|| Arc::new(Mutex::new(JobCheckpoint::default())))
             .clone();
         {
-            let mut cp_guard = entry.lock().unwrap();
+            let mut cp_guard = entry.lock().unwrap_or_else(|p| p.into_inner());
             if cp_guard.resolved_destinations.is_empty() {
                 cp_guard.resolved_destinations = resolved_destinations.clone();
             }
@@ -1119,7 +1134,7 @@ pub fn start_ingest_job(
         .collect();
 
     let initial_state = {
-        let mut jobs = manager.jobs.lock().unwrap();
+        let mut jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
         let state = if let Some(existing) = jobs.get_mut(&job_id) {
             existing.status = "copying".to_string();
             existing.phase_label = "Reprise du transfert…".to_string();
@@ -1159,7 +1174,7 @@ pub fn start_ingest_job(
             jobs.insert(job_id.clone(), st.clone());
             st
         };
-        let mut flags = manager.control_flags.lock().unwrap();
+        let mut flags = manager.control_flags.lock().unwrap_or_else(|p| p.into_inner());
         flags.insert(job_id.clone(), ctrl_flag.clone());
         state
     };
@@ -1194,7 +1209,7 @@ pub fn resume_existing_job(
     job_id: &str,
 ) -> Result<TransferJobState, String> {
     let existing = {
-        let jobs = manager.jobs.lock().unwrap();
+        let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
         jobs.get(job_id).cloned()
     };
 
@@ -1425,7 +1440,7 @@ async fn run_ingest_pipeline(
     let total_work_units = (phase_virtual_bytes as f64 * 2.0).max(1.0);
 
     let (already_bytes, already_count) = {
-        let cp = checkpoint.lock().unwrap();
+        let cp = checkpoint.lock().unwrap_or_else(|p| p.into_inner());
         let b: u64 = cp.verified_map.values().map(|r| r.size_bytes).sum();
         (b, cp.verified_map.len())
     };
@@ -1448,11 +1463,9 @@ async fn run_ingest_pipeline(
         "Phase 1/2 — Copie séquentielle haute stabilité…".to_string()
     };
 
-    // =========================================================================
     // SMART QUEUE: Prevent disk head thrashing on Mechanical HDDs
     // If any destination or source drive is a rotational HDD, acquire that drive's
     // lock. If another job is currently writing/reading to it, transition to "queued".
-    // =========================================================================
     let hdd_mounts: Vec<String> = {
         let devices = crate::volumes::list_storage_devices();
         let mut mounts = Vec::new();
@@ -1494,7 +1507,7 @@ async fn run_ingest_pipeline(
     let mut _hdd_guards = Vec::new();
     if !hdd_mounts.is_empty() {
         let hdd_locks: Vec<(String, Arc<tokio::sync::Mutex<()>>)> = {
-            let mut locks_map = manager.drive_locks.lock().unwrap();
+            let mut locks_map = manager.drive_locks.lock().unwrap_or_else(|p| p.into_inner());
             hdd_mounts
                 .iter()
                 .map(|m| {
@@ -1583,7 +1596,7 @@ async fn run_ingest_pipeline(
 
     let all_files_for_cleanup = files.clone();
     let remaining_files: Vec<SourceFileEntry> = {
-        let cp = checkpoint.lock().unwrap();
+        let cp = checkpoint.lock().unwrap_or_else(|p| p.into_inner());
         files
             .into_iter()
             .filter(|f| !cp.verified_map.contains_key(&f.rel_path))
@@ -1597,12 +1610,10 @@ async fn run_ingest_pipeline(
         resolved_destinations.clone()
     };
 
-    // =========================================================================
     // PHASE 1: Continuous Hardware-Adapted Copy & Source Hashing
     // When destination is an SSD (`use_shadow_pipeline == true`), completed files
     // are immediately streamed to the background Shadow Verifier on the SSD so
     // the SD card / source never stops reading and `verified_files` updates live!
-    // =========================================================================
     let max_permits = io_profile.max_concurrent_files.max(1);
     let semaphore = Arc::new(Semaphore::new(max_permits));
     let mut copy_handles = Vec::with_capacity(remaining_files.len());
@@ -1637,7 +1648,7 @@ async fn run_ingest_pipeline(
                 if ctrl_v.load(Ordering::Relaxed) != CTRL_RUNNING {
                     break;
                 }
-                if err_v.lock().unwrap().is_some() {
+                if err_v.lock().unwrap_or_else(|p| p.into_inner()).is_some() {
                     break;
                 }
 
@@ -1658,7 +1669,7 @@ async fn run_ingest_pipeline(
                             );
                         }
                         {
-                            let mut cp = cp_v.lock().unwrap();
+                            let mut cp = cp_v.lock().unwrap_or_else(|p| p.into_inner());
                             cp.written_rel_paths.insert(file_entry.rel_path.clone());
                         }
                         match copy_single_file_phase1(
@@ -1734,7 +1745,7 @@ async fn run_ingest_pipeline(
                 match verified_rec {
                     Some(record) => {
                         let count = {
-                            let mut cp = cp_v.lock().unwrap();
+                            let mut cp = cp_v.lock().unwrap_or_else(|p| p.into_inner());
                             if record.status == "resumed_verified" {
                                 cp.written_rel_paths.remove(&record.relative_path);
                             }
@@ -1747,7 +1758,7 @@ async fn run_ingest_pipeline(
                     }
                     None => {
                         if verify_err != "INTERRUPTED" {
-                            let mut guard = err_v.lock().unwrap();
+                            let mut guard = err_v.lock().unwrap_or_else(|p| p.into_inner());
                             if guard.is_none() {
                                 *guard = Some(verify_err);
                             }
@@ -1768,7 +1779,7 @@ async fn run_ingest_pipeline(
         if ctrl_flag.load(Ordering::Relaxed) != CTRL_RUNNING {
             break;
         }
-        if first_error.lock().unwrap().is_some() {
+        if first_error.lock().unwrap_or_else(|p| p.into_inner()).is_some() {
             break;
         }
 
@@ -1817,7 +1828,7 @@ async fn run_ingest_pipeline(
                     break;
                 }
                 {
-                    let mut cp = cp_c.lock().unwrap();
+                    let mut cp = cp_c.lock().unwrap_or_else(|p| p.into_inner());
                     cp.written_rel_paths.insert(file_entry.rel_path.clone());
                 }
                 match copy_single_file_phase1(
@@ -1898,14 +1909,14 @@ async fn run_ingest_pipeline(
                                         st.corrupted_videos.push(warn_msg.clone());
                                     }
                                 });
-                                let mut cp = cp_c.lock().unwrap();
+                                let mut cp = cp_c.lock().unwrap_or_else(|p| p.into_inner());
                                 if !cp.corrupted_videos.contains(&warn_msg) {
                                     cp.corrupted_videos.push(warn_msg);
                                 }
                             }
                         }
                         let count = {
-                            let mut cp = cp_c.lock().unwrap();
+                            let mut cp = cp_c.lock().unwrap_or_else(|p| p.into_inner());
                             if status_str == "resumed_verified" {
                                 cp.written_rel_paths.remove(&rec.relative_path);
                             }
@@ -1918,7 +1929,7 @@ async fn run_ingest_pipeline(
                     } else if let Some(tx) = shadow_tx_c {
                         let _ = tx.send((file_entry, src_hash, was_existing_candidate));
                     } else {
-                        manifests_c.lock().unwrap().push((
+                        manifests_c.lock().unwrap_or_else(|p| p.into_inner()).push((
                             file_entry,
                             src_hash,
                             was_existing_candidate,
@@ -1927,7 +1938,7 @@ async fn run_ingest_pipeline(
                 }
                 None => {
                     if last_err != "INTERRUPTED" {
-                        let mut guard = err_holder.lock().unwrap();
+                        let mut guard = err_holder.lock().unwrap_or_else(|p| p.into_inner());
                         if guard.is_none() {
                             *guard = Some(last_err);
                         }
@@ -1951,15 +1962,13 @@ async fn run_ingest_pipeline(
         let _ = shadow_handle.await;
     }
 
-    // =========================================================================
     // PHASE 2: Sequential Physical Verification with F_NOCACHE (HDD / SD targets)
     // Used when destination is a mechanical HDD or SD card where concurrent read+write
     // would cause head seeking.
-    // =========================================================================
     if !fast_inline
         && !use_shadow_pipeline
         && ctrl_flag.load(Ordering::Relaxed) == CTRL_RUNNING
-        && first_error.lock().unwrap().is_none()
+        && first_error.lock().unwrap_or_else(|p| p.into_inner()).is_none()
     {
         // Reset speed meter for Phase 2 so it cleanly measures physical verification throughput
         {
@@ -1968,7 +1977,7 @@ async fn run_ingest_pipeline(
             let v_virt_init = v_bytes_init.saturating_add(
                 (v_files_init as u64).saturating_mul(VIRTUAL_FILE_OVERHEAD_BYTES),
             ) as f64;
-            let mut meter = speed_meter.lock().unwrap();
+            let mut meter = speed_meter.lock().unwrap_or_else(|p| p.into_inner());
             meter.reset_for_phase(v_bytes_init, v_virt_init, 2);
         }
 
@@ -1979,7 +1988,7 @@ async fn run_ingest_pipeline(
         });
 
         let mut to_verify = {
-            let mut guard = copied_manifests.lock().unwrap();
+            let mut guard = copied_manifests.lock().unwrap_or_else(|p| p.into_inner());
             std::mem::take(&mut *guard)
         };
         // Verify in deterministic relative path order for sequential disk read locality
@@ -1989,7 +1998,7 @@ async fn run_ingest_pipeline(
             if ctrl_flag.load(Ordering::Relaxed) != CTRL_RUNNING {
                 break;
             }
-            if first_error.lock().unwrap().is_some() {
+            if first_error.lock().unwrap_or_else(|p| p.into_inner()).is_some() {
                 break;
             }
 
@@ -2011,7 +2020,7 @@ async fn run_ingest_pipeline(
                         );
                     }
                     {
-                        let mut cp = checkpoint.lock().unwrap();
+                        let mut cp = checkpoint.lock().unwrap_or_else(|p| p.into_inner());
                         cp.written_rel_paths.insert(file_entry.rel_path.clone());
                     }
                     match copy_single_file_phase1(
@@ -2086,7 +2095,7 @@ async fn run_ingest_pipeline(
             match verified_rec {
                 Some(record) => {
                     let count = {
-                        let mut cp = checkpoint.lock().unwrap();
+                        let mut cp = checkpoint.lock().unwrap_or_else(|p| p.into_inner());
                         if record.status == "resumed_verified" {
                             cp.written_rel_paths.remove(&record.relative_path);
                         }
@@ -2099,7 +2108,7 @@ async fn run_ingest_pipeline(
                 }
                 None => {
                     if verify_err != "INTERRUPTED" {
-                        let mut guard = first_error.lock().unwrap();
+                        let mut guard = first_error.lock().unwrap_or_else(|p| p.into_inner());
                         if guard.is_none() {
                             *guard = Some(verify_err);
                         }
@@ -2115,7 +2124,7 @@ async fn run_ingest_pipeline(
     // and verify every secondary drive with `F_NOCACHE` against the original camera `source_hash`!
     if use_cascading
         && ctrl_flag.load(Ordering::Relaxed) == CTRL_RUNNING
-        && first_error.lock().unwrap().is_none()
+        && first_error.lock().unwrap_or_else(|p| p.into_inner()).is_none()
     {
         let primary_dest = resolved_destinations[0].clone();
         let secondary_dests = resolved_destinations[1..].to_vec();
@@ -2131,7 +2140,7 @@ async fn run_ingest_pipeline(
                 break;
             }
             let expected_hash = {
-                let cp = checkpoint.lock().unwrap();
+                let cp = checkpoint.lock().unwrap_or_else(|p| p.into_inner());
                 cp.verified_map
                     .get(&f.rel_path)
                     .map(|r| r.source_hash.clone())
@@ -2188,7 +2197,7 @@ async fn run_ingest_pipeline(
 
             if let Err(err) = cascade_res {
                 if err != "INTERRUPTED" {
-                    let mut guard = first_error.lock().unwrap();
+                    let mut guard = first_error.lock().unwrap_or_else(|p| p.into_inner());
                     if guard.is_none() {
                         *guard = Some(err);
                     }
@@ -2200,7 +2209,7 @@ async fn run_ingest_pipeline(
     }
 
     let ctrl_state = ctrl_flag.load(Ordering::Relaxed);
-    let maybe_err = first_error.lock().unwrap().clone();
+    let maybe_err = first_error.lock().unwrap_or_else(|p| p.into_inner()).clone();
 
     if let Some(err_msg) = maybe_err {
         finalize_job_non_complete(
@@ -2254,7 +2263,7 @@ async fn run_ingest_pipeline(
     }
 
     let verified_records: Vec<VerifiedFileRecord> = {
-        let cp = checkpoint.lock().unwrap();
+        let cp = checkpoint.lock().unwrap_or_else(|p| p.into_inner());
         let mut list: Vec<VerifiedFileRecord> = cp.verified_map.values().cloned().collect();
         list.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
         list
@@ -2262,12 +2271,21 @@ async fn run_ingest_pipeline(
 
     if settings.move_mode_delete_source && verified_records.len() == total_files {
         for f in &all_files_for_cleanup {
-            let _ = fs::remove_file(&f.abs_path);
+            let is_regular = fs::symlink_metadata(&f.abs_path)
+                .map(|m| m.file_type().is_file())
+                .unwrap_or(false);
+            let all_dest_present = !resolved_destinations.is_empty()
+                && resolved_destinations
+                    .iter()
+                    .all(|d| d.join(&f.rel_path).exists());
+            if is_regular && all_dest_present {
+                let _ = fs::remove_file(&f.abs_path);
+            }
         }
     }
 
     let corrupted_videos_snapshot = {
-        let jobs = manager.jobs.lock().unwrap();
+        let jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
         jobs.get(&job_id).map(|j| j.corrupted_videos.clone()).unwrap_or_default()
     };
 
@@ -2293,7 +2311,7 @@ async fn run_ingest_pipeline(
         st.phase_label = if corrupted_videos_snapshot.is_empty() {
             "Transfert 100% certifié & intégrité vidéo validée".to_string()
         } else {
-            format!("Transfert certifié — ⚠️ {} rush(s) vidéo non finalisé(s) détecté(s)", corrupted_videos_snapshot.len())
+            format!("Transfert certifié — ALERTE : {} rush(s) vidéo non finalisé(s) détecté(s)", corrupted_videos_snapshot.len())
         };
         st.current_file = String::new();
         st.processed_files = total_files;
@@ -2338,27 +2356,37 @@ async fn run_ingest_pipeline(
 
     if !settings.webhook_url.trim().is_empty() {
         let url = settings.webhook_url.trim().to_string();
-        let msg = format!(
-            "{{\"content\":\"✅ Hardback : Transfert '{}' terminé ({} fichiers vérifiés, {:.1} Mo/s)\",\"text\":\"✅ Hardback : Transfert '{}' terminé ({} fichiers vérifiés, {:.1} Mo/s)\"}}",
-            source_name,
-            verified_records.len(),
-            avg_speed_bps / (1024.0 * 1024.0),
-            source_name,
-            verified_records.len(),
-            avg_speed_bps / (1024.0 * 1024.0)
-        );
-        let _ = Command::new("curl")
-            .args([
-                "-s",
-                "-X",
-                "POST",
-                "-H",
-                "Content-Type: application/json",
-                "-d",
-                &msg,
-                &url,
-            ])
-            .spawn();
+        if validate_webhook_url(&url).is_ok() {
+            let summary = format!(
+                "Hardback : Transfert '{}' terminé ({} fichiers vérifiés, {:.1} Mo/s)",
+                source_name,
+                verified_records.len(),
+                avg_speed_bps / (1024.0 * 1024.0)
+            );
+            let msg = serde_json::json!({
+                "content": &summary,
+                "text": &summary
+            })
+            .to_string();
+            let _ = Command::new("/usr/bin/curl")
+                .args([
+                    "-s",
+                    "--proto",
+                    "=https",
+                    "--tlsv1.2",
+                    "--max-time",
+                    "10",
+                    "-X",
+                    "POST",
+                    "-H",
+                    "Content-Type: application/json",
+                    "-d",
+                    &msg,
+                    "--",
+                    &url,
+                ])
+                .spawn();
+        }
     }
 
     let history_entry = IngestHistoryEntry {
@@ -3242,7 +3270,7 @@ fn emit_throttled_metrics(
     let current_virtual_work = copy_virtual.saturating_add(verify_virtual) as f64;
 
     let (should_emit, displayed_bps, eta_seconds, phase_tag, single_pass_mode, phase_total_virt) = {
-        let mut meter = speed_meter.lock().unwrap();
+        let mut meter = speed_meter.lock().unwrap_or_else(|p| p.into_inner());
         let (active_phase_real_bytes, active_phase_virtual_work) = if meter.phase_tag == 2 {
             (verified_bytes, verify_virtual as f64)
         } else {

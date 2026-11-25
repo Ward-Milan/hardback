@@ -119,8 +119,8 @@ pub fn write_transfer_reports(
                 _ => "ERREUR      ",
             };
             let v_warn = match rec.video_health.as_deref() {
-                Some("corrupted_moov") => " [⚠️ VIDÉO SANS ATOME MOOV]",
-                Some("truncated") => " [⚠️ VIDÉO TRONQUÉE]",
+                Some("corrupted_moov") => " [ALERTE: VIDÉO SANS ATOME MOOV]",
+                Some("truncated") => " [ALERTE: VIDÉO TRONQUÉE]",
                 _ => "",
             };
             txt.push_str(&format!(
@@ -135,7 +135,7 @@ pub fn write_transfer_reports(
             txt.push_str("--------------------------------------------------------------------------------\n");
             txt.push_str("ATTENTION — INTÉGRITÉ VIDÉO (RUSH NON FINALISÉ / ATOME MOOV MANQUANT) :\n");
             for cv in corrupted_videos {
-                txt.push_str(&format!("  ⚠️ {}\n", cv));
+                txt.push_str(&format!("  [ALERTE] {}\n", cv));
             }
             txt.push_str("AVERTISSEMENT : La caméra a été coupée ou la batterie s'est éteinte pendant\n");
             txt.push_str("l'enregistrement. Ne formatez pas la carte avant récupération spécialisée !\n");
@@ -582,7 +582,7 @@ pub fn export_certificate_pdf(
                         cert.avg_speed_mb_s,
                         cert.duration_secs,
                         cert.algorithm,
-                        if cert.corrupted_videos.is_empty() { "100% Intacte" } else { "⚠️ Rushes incomplets détectés" }
+                        if cert.corrupted_videos.is_empty() { "100% Intacte" } else { "Alerte : rushes incomplets détectés" }
                     ),
                 ),
             ];

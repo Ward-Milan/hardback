@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.1.0-10B981.svg?style=flat-square" alt="Version 0.1.0" />
+  <img src="https://img.shields.io/badge/Version-1.0.2-10B981.svg?style=flat-square" alt="Version 1.0.2" />
   <img src="https://img.shields.io/badge/Platform-macOS%20(Apple%20Silicon)-3B82F6.svg?style=flat-square" alt="macOS" />
   <img src="https://img.shields.io/badge/Engine-Rust%20%2B%20Tauri%20v2-F59E0B.svg?style=flat-square" alt="Rust Tauri" />
   <img src="https://img.shields.io/badge/UI-React%2018%20%7C%20Tailwind%20CSS-191919.svg?style=flat-square" alt="React Tailwind" />
@@ -29,6 +29,7 @@
 | :--- | :--- | :--- | :--- |
 | **[Hardback](https://github.com/Ward-Milan/hardback)** | **Ingest & Prévention (Tournage)** | Déchargement multi-destinations en cascade, vérification physique `F_NOCACHE` bit-à-bit (XXH64, XXH3, SHA-256), manifestes ASC-MHL & compagnon barre des menus. | [Ward-Milan/hardback](https://github.com/Ward-Milan/hardback) |
 | **[HardRecover](https://github.com/Ward-Milan/hardrecover)** | **Sauvetage & Réparation (Urgence)** | Récupération de cartes formatées (ExFAT/Carving), reconstruction d'entêtes vidéo/audio tronqués sans ré-encodage, clonage 5 passes `.img` et diagnostic S.M.A.R.T. | [Ward-Milan/hardrecover](https://github.com/Ward-Milan/hardrecover) |
+| **[HardHub](https://github.com/Ward-Milan/hardhub)** | **Centre de Contrôle (Quotidien)** | Space Lens, catalogue hors-ligne, doublons sécurisés, gros fichiers, santé NVMe S.M.A.R.T. native et Eject Doctor. | [Ward-Milan/hardhub](https://github.com/Ward-Milan/hardhub) |
 
 ---
 
@@ -37,13 +38,13 @@
 Le package d'installation autonome macOS (Apple Silicon) est prêt à l'emploi :
 
 <p align="center">
-  <a href="https://github.com/Ward-Milan/hardback/releases/latest/download/Hardback_0.1.0.dmg">
-    <img src="https://img.shields.io/badge/Télécharger_Hardback_v0.1.0-(2.5_Mo)-10B981?style=for-the-badge&logo=apple&logoColor=white" height="42" alt="Télécharger Hardback DMG" />
+  <a href="https://github.com/Ward-Milan/hardback/releases/latest/download/Hardback_1.0.2_aarch64.dmg">
+    <img src="https://img.shields.io/badge/Télécharger_Hardback_v1.0.2-10B981?style=for-the-badge&logo=apple&logoColor=white" height="42" alt="Télécharger Hardback DMG" />
   </a>
 </p>
 
 ### Installation sur macOS
-1. Téléchargez et ouvrez **[`Hardback_0.1.0.dmg`](https://github.com/Ward-Milan/hardback/releases/latest/download/Hardback_0.1.0.dmg)** (ou directement depuis le dépôt : [Hardback_0.1.0.dmg](Hardback_0.1.0.dmg)).
+1. Téléchargez et ouvrez **[`Hardback_1.0.2_aarch64.dmg`](https://github.com/Ward-Milan/hardback/releases/latest/download/Hardback_1.0.2_aarch64.dmg)** (ou directement depuis le dépôt : [Hardback_1.0.2_aarch64.dmg](Hardback_1.0.2_aarch64.dmg)).
 2. Glissez-déposez **Hardback.app** dans votre dossier **/Applications**.
 3. **Premier lancement (sécurité macOS / Gatekeeper)** : L'application étant open-source et gratuite (sans abonnement payant Apple Developer), macOS peut bloquer sa première ouverture. Pour l'autoriser :
    - Lancez l'app une première fois, puis allez dans **Réglages Système › Confidentialité et sécurité**, descendez tout en bas et cliquez sur **« Ouvrir quand même »**.
@@ -117,7 +118,7 @@ Hardback/
 │       ├── updater.rs        # Mise à jour intégrée depuis GitHub Releases
 │       └── lib.rs            # Commandes IPC Tauri et cycle de vie
 ├── app-icon.svg              # Icône vectorielle haute définition (1024×1024)
-├── Hardback_0.1.0.dmg        # Installateur autonome macOS
+├── Hardback_1.0.2_aarch64.dmg # Installateur autonome macOS
 ├── LICENSE                   # Licence Open-Source MIT
 └── README.md                 # Documentation du projet
 ```

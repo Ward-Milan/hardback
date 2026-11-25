@@ -8,6 +8,14 @@
     <false/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Hardback lit et sauvegarde vos médias depuis et vers vos dossiers Bureau.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Hardback lit et sauvegarde vos médias depuis et vers vos dossiers Documents.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Hardback lit et sauvegarde vos médias depuis et vers votre dossier Téléchargements.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>Hardback copie et vérifie les fichiers depuis vos cartes SD, clés USB et disques externes.</string>
 </dict>
 </plist>
 

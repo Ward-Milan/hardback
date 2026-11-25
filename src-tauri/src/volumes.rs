@@ -171,6 +171,7 @@ pub fn open_in_file_manager(raw_path: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
+            .arg("--")
             .arg(&target)
             .spawn()
             .map_err(|e| format!("Impossible d'ouvrir le Finder : {}", e))?;

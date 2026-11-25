@@ -1,6 +1,6 @@
 [package]
 name = "hardback"
-version = "1.0.1"
+version = "1.0.2"
 description = "High-speed verified media offload engine in Rust"
 authors = ["Hardback"]
 edition = "2021"

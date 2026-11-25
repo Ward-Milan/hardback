@@ -119,7 +119,7 @@ async fn pause_transfer(
     job_id: String,
 ) -> Result<TransferJobState, String> {
     {
-        let flags = manager.control_flags.lock().unwrap();
+        let flags = manager.control_flags.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(flag) = flags.get(&job_id) {
             flag.store(CTRL_PAUSED, Ordering::Relaxed);
         } else {
@@ -128,7 +128,7 @@ async fn pause_transfer(
     }
 
     let updated_job = {
-        let mut jobs = manager.jobs.lock().unwrap();
+        let mut jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(job) = jobs.get_mut(&job_id) {
             job.status = "paused".to_string();
             job.phase_label = "En pause — Prêt pour reprise immédiate".to_string();
@@ -257,11 +257,11 @@ fn dismiss_transfer(
     job_id: String,
 ) -> Vec<TransferJobState> {
     {
-        let mut jobs = manager.jobs.lock().unwrap();
+        let mut jobs = manager.jobs.lock().unwrap_or_else(|p| p.into_inner());
         jobs.remove(&job_id);
     }
     {
-        let mut cps = manager.checkpoints.lock().unwrap();
+        let mut cps = manager.checkpoints.lock().unwrap_or_else(|p| p.into_inner());
         cps.remove(&job_id);
     }
     manager.persist_to_disk();
@@ -293,14 +293,72 @@ fn remove_history_item(id: String) -> Vec<IngestHistoryEntry> {
     delete_history_entry(&id)
 }
 
+pub(crate) fn validate_readable_report_path(path: &str) -> Result<PathBuf, String> {
+    if path.trim().is_empty() {
+        return Err("Chemin de rapport vide.".to_string());
+    }
+    let raw = PathBuf::from(path);
+    let canon = fs::canonicalize(&raw)
+        .map_err(|_| format!("Le rapport demandé est introuvable : {}", path))?;
+    if !canon.is_file() {
+        return Err("Le chemin ne correspond pas à un fichier régulier.".to_string());
+    }
+
+    let canon_str = canon.to_string_lossy();
+    let allowed_temp_prefix = canon_str.starts_with("/private/var/folders/");
+    if canon_str.starts_with("/etc")
+        || canon_str.starts_with("/private/etc")
+        || canon_str.starts_with("/System")
+        || ((canon_str.starts_with("/var") || canon_str.starts_with("/private/var"))
+            && !allowed_temp_prefix)
+        || canon_str.contains("/.ssh/")
+        || canon_str.contains("/Library/Keychains/")
+        || canon_str.contains("/.aws/")
+        || canon_str.contains("/.gnupg/")
+    {
+        return Err("Accès refusé : emplacement système protégé.".to_string());
+    }
+
+    let file_name = canon
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if file_name == ".env" || file_name.starts_with(".env.") {
+        return Err("Accès refusé aux fichiers d'environnement.".to_string());
+    }
+
+    let ext = canon
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !matches!(
+        ext.as_str(),
+        "txt" | "mhl" | "json" | "csv" | "xml" | "log" | "pdf"
+    ) {
+        return Err("Type de fichier non autorisé pour l'aperçu de rapport.".to_string());
+    }
+
+    let meta = fs::metadata(&canon).map_err(|e| e.to_string())?;
+    if meta.len() > 25 * 1024 * 1024 {
+        return Err("Fichier rapport trop volumineux (> 25 Mo).".to_string());
+    }
+
+    Ok(canon)
+}
+
 #[tauri::command]
 fn read_report_content(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| format!("Impossible de lire le rapport {} : {}", path, e))
+    let valid_path = validate_readable_report_path(&path)?;
+    fs::read_to_string(&valid_path)
+        .map_err(|e| format!("Impossible de lire le rapport {} : {}", path, e))
 }
 
 #[tauri::command]
 fn read_visual_certificate(path: String) -> Result<VisualCertificateData, String> {
-    load_visual_certificate(&path)
+    let valid_path = validate_readable_report_path(&path)?;
+    load_visual_certificate(&valid_path.to_string_lossy())
 }
 
 #[tauri::command]
@@ -406,11 +464,14 @@ pub fn run() {
                 .text("quit", "Quitter Hardback")
                 .build()?;
 
-            let _tray = TrayIconBuilder::with_id("hardback-tray")
-                .icon(app.default_window_icon().unwrap().clone())
+            let mut tray_builder = TrayIconBuilder::with_id("hardback-tray")
                 .tooltip("Hardback Express — Ingest Rapide")
                 .menu(&tray_menu)
-                .show_menu_on_left_click(false)
+                .show_menu_on_left_click(false);
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            let _tray = tray_builder
                 .on_menu_event(|app, event| {
                     match event.id.as_ref() {
                         "open_main" => {
@@ -567,4 +628,141 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{compute_file_hash_nocache, validate_webhook_url, CTRL_RUNNING};
+    use crate::report::{write_transfer_reports, VerifiedFileRecord};
+    use std::sync::atomic::AtomicU8;
+
+    #[test]
+    fn test_validate_readable_report_path_security() {
+        let tmp_dir = std::env::temp_dir().join(format!("hardback_test_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+
+        let valid_mhl = tmp_dir.join("manifest.mhl");
+        fs::write(&valid_mhl, "<hashlist/>").unwrap();
+        assert!(validate_readable_report_path(&valid_mhl.to_string_lossy()).is_ok());
+
+        let valid_txt = tmp_dir.join("report.txt");
+        fs::write(&valid_txt, "OK").unwrap();
+        assert!(validate_readable_report_path(&valid_txt.to_string_lossy()).is_ok());
+
+        let bad_ext = tmp_dir.join("payload.sh");
+        fs::write(&bad_ext, "echo hi").unwrap();
+        assert!(validate_readable_report_path(&bad_ext.to_string_lossy()).is_err());
+
+        assert!(validate_readable_report_path("/etc/passwd").is_err());
+        assert!(validate_readable_report_path(&tmp_dir.join("missing.txt").to_string_lossy()).is_err());
+
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_validate_webhook_url_security() {
+        assert!(validate_webhook_url("https://hooks.slack.com/services/T000/B000/XXXX").is_ok());
+        assert!(validate_webhook_url("http://hooks.slack.com/services/T000").is_err());
+        assert!(validate_webhook_url("file:///etc/passwd").is_err());
+        assert!(validate_webhook_url("-K/etc/passwd").is_err());
+        assert!(validate_webhook_url("https://example.com/hook with space").is_err());
+        assert!(validate_webhook_url("").is_err());
+    }
+
+    #[test]
+    fn test_updater_url_validation() {
+        assert!(updater::validate_update_url(
+            "https://github.com/Ward-Milan/hardback/releases/download/v1.0.1/Hardback_1.0.1_aarch64.dmg"
+        )
+        .is_ok());
+        assert!(updater::validate_update_url("https://evil.com/Hardback.dmg").is_err());
+        assert!(updater::validate_update_url(
+            "http://github.com/Ward-Milan/hardback/releases/download/v1.0.1/Hardback.dmg"
+        )
+        .is_err());
+        assert!(updater::validate_update_url("-o /tmp/evil.dmg").is_err());
+        assert!(updater::validate_update_url(
+            "https://github.com/Ward-Milan/hardback/releases/download/v1.0.1/script.sh"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_physical_nocache_hashing_all_algorithms() {
+        let tmp_dir = std::env::temp_dir().join(format!("hardback_hash_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let file_path = tmp_dir.join("sample_clip.mov");
+        let mut data = vec![0xABu8; 131_072];
+        data[0] = 0x11;
+        fs::write(&file_path, &data).unwrap();
+
+        let flag = AtomicU8::new(CTRL_RUNNING);
+        for algo in ["xxh64", "xxh3", "md5", "sha256"] {
+            let h1 = compute_file_hash_nocache(&file_path, algo, &flag, |_| {}).unwrap();
+            let h2 = compute_file_hash_nocache(&file_path, algo, &flag, |_| {}).unwrap();
+            assert_eq!(h1, h2, "deterministic hash failed for {}", algo);
+            assert!(!h1.is_empty());
+        }
+
+        let before_sha = compute_file_hash_nocache(&file_path, "sha256", &flag, |_| {}).unwrap();
+        data[42] ^= 0xFF;
+        fs::write(&file_path, &data).unwrap();
+        let after_sha = compute_file_hash_nocache(&file_path, "sha256", &flag, |_| {}).unwrap();
+        assert_ne!(before_sha, after_sha);
+
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_reports_xml_escaping_and_zero_emojis() {
+        let tmp_dir = std::env::temp_dir().join(format!("hardback_rep_{}", uuid::Uuid::new_v4()));
+        let dest_dir = tmp_dir.join("DEST_A&B");
+        fs::create_dir_all(&dest_dir).unwrap();
+
+        let rec = VerifiedFileRecord {
+            relative_path: "DCIM/Reel <1> & \"Test\".mov".to_string(),
+            size_bytes: 1024 * 1024,
+            source_hash: "deadbeef12345678".to_string(),
+            dest_hashes: vec!["deadbeef12345678".to_string()],
+            algorithm: "xxh64".to_string(),
+            status: "verified".to_string(),
+            video_health: Some("corrupted_moov".to_string()),
+        };
+
+        let now = chrono::Utc::now();
+        let written = write_transfer_reports(
+            "test-job-1",
+            "/Volumes/CARD_A&B",
+            std::slice::from_ref(&dest_dir),
+            now - chrono::Duration::seconds(2),
+            now,
+            "xxh64",
+            std::slice::from_ref(&rec),
+            &["DCIM/Reel <1> & \"Test\".mov".to_string()],
+            true,
+        );
+        assert!(!written.is_empty());
+
+        for entry in fs::read_dir(&dest_dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_file() {
+                let text = fs::read_to_string(&p).unwrap();
+                assert!(!text.contains('\u{26A0}') && !text.contains('\u{2705}'));
+                if p.extension().and_then(|e| e.to_str()) == Some("mhl") {
+                    assert!(text.contains("&amp;"));
+                    assert!(text.contains("&lt;1&gt;"));
+                    assert!(text.contains("&quot;Test&quot;"));
+                }
+            }
+        }
+
+        for p in &written {
+            let txt_p = PathBuf::from(p);
+            let _ = fs::remove_file(&txt_p);
+            let json_p = txt_p.with_extension("json");
+            let _ = fs::remove_file(&json_p);
+        }
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
 }
